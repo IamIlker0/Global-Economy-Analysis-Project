@@ -42,7 +42,9 @@ This project analyzes the National Accounts Main Aggregates Database from the Un
 - Dynamic filtering and visualization options
 
 **Live Demo:** [Global Economy Analysis Dashboard](https://global-economy-analysis-project-jmrhdd8ancqlvqnjjkwv2z.streamlit.app)
+
 The dashboard provides interactive visualizations of global economic data, allowing users to explore trade flows, GDP relationships, and sectoral analyses across different countries and time periods. The deployed application is hosted on Streamlit Cloud and integrates data visualization with our machine learning predictions.
+
 
 ## Key Findings
 
