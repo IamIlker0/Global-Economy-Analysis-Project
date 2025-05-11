@@ -59,11 +59,11 @@ economy_data = load_economy_data()
 
 dashboard_embed_codes = {
     "Trade Flows by Country": """
-    <div style='border-radius: 10px; overflow: hidden; padding: 10px; background-color: #f0f0f0; margin: 0 auto; width: 95%; max-width: 2000px;'>
+    <div style='border-radius: 10px; overflow: hidden; padding: 10px; background-color: #f0f0f0; margin: 0 auto; width: 100%; max-width: 1800px;'>
         <div style='background-color: #4b3f72; color: #ffd166; padding: 8px; margin-bottom: 10px; border-radius: 8px; text-align: center; font-weight: bold; max-width: 600px; margin-left: auto; margin-right: auto;'>
             For better viewing please use the full screen button in the bottom right corner.
         </div>
-        <div class='tableauPlaceholder' id='viz1745348885230' style='position: relative'>
+        <div class='tableauPlaceholder' id='viz1745348885230' style='position: relative; width: 100%; height: 800px;'>
             <noscript>
                 <a href='#'>
                     <img alt='changes by country ' src='https://public.tableau.com/static/images/ch/changesbycountry/changesbycountry/1_rss.png' style='border: none' />
@@ -172,13 +172,13 @@ dashboard_embed_codes = {
             </object>
         </div>
         <script type='text/javascript'>
-            var divElement = document.getElementById('viz1745349196215');
-            var vizElement = divElement.getElementsByTagName('object')[0];
-            vizElement.style.width='100%';
-            vizElement.style.height=(divElement.offsetWidth*0.75)+'px';
-            var scriptElement = document.createElement('script');
-            scriptElement.src = 'https://public.tableau.com/javascripts/api/viz_v1.js';
-            vizElement.parentNode.insertBefore(scriptElement, vizElement);
+           var divElement = document.getElementById('viz1745348885230');
+           var vizElement = divElement.getElementsByTagName('object')[0];
+           vizElement.style.width='100%';
+           vizElement.style.height='800px';  // Sabit yükseklik
+           var scriptElement = document.createElement('script');
+           scriptElement.src = 'https://public.tableau.com/javascripts/api/viz_v1.js';
+           vizElement.parentNode.insertBefore(scriptElement, vizElement);
         </script>
     </div>
     """,
