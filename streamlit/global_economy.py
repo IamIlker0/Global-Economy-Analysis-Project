@@ -7,7 +7,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import time
 
-ECONOMY_DATA_FILE = 'global_economy.csv'  
+ECONOMY_DATA_FILE = 'streamlit/global_economy.csv'  
 
 # Page configuration
 st.set_page_config(
@@ -265,7 +265,7 @@ dashboard_embed_codes = {
 @st.cache_resource
 def load_forecast_model():
     try:
-        with open("gdp_prediction_model.pkl", 'rb') as f:
+        with open("streamlit/gdp_prediction_model.pkl", 'rb') as f:
             model_info = pickle.load(f)
             
         # Model bilgilerinin doğru yapıda olduğunu kontrol et
@@ -334,19 +334,19 @@ with tab1:
     with col1:
         st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
         st.subheader("Trade Flows by Country")
-        st.image("images/changes by country.png", output_format="PNG", width=None)
+        st.image("streamlit/images/changes by country.png", output_format="PNG", width=None)
         dashboard_choice1 = st.button("View Dashboard", key="db1", use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
         
         st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
         st.subheader("Per Capita GNI Map")
-        st.image("images/Per Capita GNI, Monitoring on the World Map.png", output_format="PNG", width=None)
+        st.image("streamlit/images/Per Capita GNI, Monitoring on the World Map.png", output_format="PNG", width=None)
         dashboard_choice3 = st.button("View Dashboard", key="db3", use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
         
         st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
         st.subheader("Sectoral Spending Distribution")
-        st.image("images/Sectoral Expenditure Analysis.png", output_format="PNG", width=None)
+        st.image("streamlit/images/Sectoral Expenditure Analysis.png", output_format="PNG", width=None)
         dashboard_choice5 = st.button("View Dashboard", key="db5", use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)   
        
@@ -357,13 +357,13 @@ with tab1:
         
         st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
         st.subheader("USD Exchange Rate")
-        st.image("images/USD exchange rate according to IMF.png", output_format="PNG", width=None)
+        st.image("streamlit/images/USD exchange rate according to IMF.png", output_format="PNG", width=None)
         dashboard_choice2 = st.button("View Dashboard", key="db2", use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
         
         st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
         st.subheader("Sectors by Decades")
-        st.image("images/the values of sectors by decades.png", output_format="PNG", width=None)
+        st.image("streamlit/images/the values of sectors by decades.png", output_format="PNG", width=None)
         dashboard_choice4 = st.button("View Dashboard", key="db4", use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
     
