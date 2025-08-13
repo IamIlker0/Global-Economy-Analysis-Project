@@ -2,12 +2,13 @@ import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
-import pickle
+import joblib
 import plotly.express as px
 import plotly.graph_objects as go
-import time
+import matplotlib.pyplot as plt
+import os
 
-ECONOMY_DATA_FILE = 'streamlit/global_economy.csv'  
+ECONOMY_DATA_FILE = 'global_economy.csv'
 
 # Page configuration
 st.set_page_config(
@@ -57,13 +58,14 @@ def load_economy_data():
 
 economy_data = load_economy_data()
 
+
 dashboard_embed_codes = {
     "Trade Flows by Country": """
-    <div style='border-radius: 10px; overflow: hidden; padding: 10px; background-color: #f0f0f0; margin: 0 auto; width: 100%; max-width: 1800px;'>
+    <div style='border-radius: 10px; overflow: hidden; padding: 10px; background-color: #f0f0f0; margin: 0 auto; width: 95%; max-width: 2000px;'>
         <div style='background-color: #4b3f72; color: #ffd166; padding: 8px; margin-bottom: 10px; border-radius: 8px; text-align: center; font-weight: bold; max-width: 600px; margin-left: auto; margin-right: auto;'>
             For better viewing please use the full screen button in the bottom right corner.
         </div>
-        <div class='tableauPlaceholder' id='viz1745348885230' style='position: relative; width: 100%; height: 800px;'>
+        <div class='tableauPlaceholder' id='viz1745348885230' style='position: relative'>
             <noscript>
                 <a href='#'>
                     <img alt='changes by country ' src='https://public.tableau.com/static/images/ch/changesbycountry/changesbycountry/1_rss.png' style='border: none' />
@@ -172,13 +174,13 @@ dashboard_embed_codes = {
             </object>
         </div>
         <script type='text/javascript'>
-           var divElement = document.getElementById('viz1745348885230');
-           var vizElement = divElement.getElementsByTagName('object')[0];
-           vizElement.style.width='100%';
-           vizElement.style.height='800px';  // Sabit yükseklik
-           var scriptElement = document.createElement('script');
-           scriptElement.src = 'https://public.tableau.com/javascripts/api/viz_v1.js';
-           vizElement.parentNode.insertBefore(scriptElement, vizElement);
+            var divElement = document.getElementById('viz1745349196215');
+            var vizElement = divElement.getElementsByTagName('object')[0];
+            vizElement.style.width='100%';
+            vizElement.style.height=(divElement.offsetWidth*0.75)+'px';
+            var scriptElement = document.createElement('script');
+            scriptElement.src = 'https://public.tableau.com/javascripts/api/viz_v1.js';
+            vizElement.parentNode.insertBefore(scriptElement, vizElement);
         </script>
     </div>
     """,
@@ -261,23 +263,48 @@ dashboard_embed_codes = {
     </div>
     """
 }
+
 # Load ML model for economic forecasting
 @st.cache_resource
 def load_forecast_model():
     try:
-        with open("streamlit/gdp_prediction_model.pkl", 'rb') as f:
-            model_info = pickle.load(f)
+        # First try to load model with metadata
+        try:
+            model_data = joblib.load("gdp_prediction_model_with_metadata.pkl")
+            return model_data
+        except:
+            # Fallback: Original model + manual features
+            model = joblib.load("gdp_prediction_model.pkl")
             
-        # Model bilgilerinin doğru yapıda olduğunu kontrol et
-        if isinstance(model_info, dict) and 'model' in model_info:
-            return model_info
-        else:
-            st.error("Model dosyası beklenen formatta değil.")
-            return None
+            # EXACT feature list from notebook (13 features)
+            selected_features = [
+                'AMA_exchange_rate',
+                'IMF_based_exchange_rate', 
+                'Population',
+                'Per_capita_GNI',
+                'Agriculture_hunting_forestry_fishing_ISIC_A_B',
+                'Changes_in_inventories',
+                'Construction_ISIC_F',
+                'General_government_final_consumption_expenditure',
+                'Manufacturing_ISIC_D',
+                'Mining_Manufacturing_Utilities_ISIC_C_E',
+                'Other_Activities_ISIC_J_P',
+                'Transport_storage_and_communication_ISIC_I',
+                'Wholesale_retail_trade_restaurants_and_hotels_ISIC_G_H'
+            ]
+            
+            return {
+                'model': model,
+                'features': selected_features,
+                'r2_score': 0.9887
+            }
+
     except Exception as e:
         st.error(f"Error loading model: {e}")
         return None
 
+model_info = load_forecast_model()
+model_loaded = model_info is not None
 model_info = load_forecast_model()
 model_loaded = model_info is not None
 
@@ -289,39 +316,36 @@ if model_loaded:
 # Main title and description
 st.markdown('<h1 class="main-header">🌍 Global Economy Analysis & Forecasting</h1>', unsafe_allow_html=True)
 
-# Show model diagnostic information (optional - can be helpful during development)
+# Show model diagnostic information
 with st.expander("Model Diagnostic Information", expanded=False):
     if model_loaded:
-        st.success("Economic forecast model loaded successfully!")
+        st.success("✅ Economic forecast model loaded successfully!")
         
-        st.write("Model information:")
-        st.write("- Model type:", type(model_info['model']))
-        st.write("- Features used:", model_info['features'])
-        st.write("- R² score:", model_info.get('r2_score', "Not specified"))
+        st.write("**Model Information:**")
+        st.write(f"- Model type: {type(model_info['model'])}")
+        st.write(f"- Features count: {len(model_info['features'])}")
+        st.write(f"- R² score: {model_info.get('r2_score', 'Not specified')}")
         
-        test_data = {
-            'GDP_Growth': 2.5,
-            'Inflation_Rate': 3.0,
-            'Unemployment_Rate': 5.0,
-            'Trade_Balance': -2.5,
-            'Region_Asia': 0
-        }
-        test_df = pd.DataFrame([test_data])
+        st.write("**Features used by model:**")
+        for i, feature in enumerate(model_info['features'], 1):
+            st.write(f"{i}. {feature}")
         
-        st.write("Test data:", test_data)
-        
+        # Test prediction to check if model works
         try:
-            test_prediction = model_info['model'].predict(test_df)[0]
-            st.write("Test forecast prediction:", test_prediction)
+            # Prepare test data (13 features)
+            test_data = np.array([[1.0, 1.0, 50000000, 10000, 500, 0, 25, 1000, 800, 600, 400, 300, 700]])
+            test_prediction = model_info['model'].predict(test_data)[0]
+            st.success(f"✅ Model test successful! Sample prediction: ${test_prediction:,.2f}")
         except Exception as predict_error:
-            st.error(f"Could not make test prediction: {predict_error}")
+            st.error(f"❌ Model test failed: {predict_error}")
     else:
-        st.warning("Economic forecast model not loaded. Some functionality may be limited.")
+        st.warning("⚠️ Economic forecast model not loaded. Some functionality may be limited.")
+
 
 # Navigation with tabs
-# tabs = st.tabs(["📊 Economic Dashboards", "📈 Economic Forecasting", "🔍 Country Comparison"])
-# tab1, tab2, tab3 = tabs
-tab1 = st.tabs(["📊 Economic Dashboards"])[0]
+tabs = st.tabs(["📊 Economic Dashboards", "📈 Economic Forecasting", "🔍 Country Comparison"])
+tab1, tab2, tab3 = tabs
+# tab1 = st.tabs(["📊 Economic Dashboards"])[0]
 
 # Tab 1: Analysis Dashboards
 with tab1:
@@ -334,19 +358,19 @@ with tab1:
     with col1:
         st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
         st.subheader("Trade Flows by Country")
-        st.image("streamlit/images/changes by country.png", output_format="PNG", width=None)
+        st.image("images/changes by country.png", output_format="PNG", width=None)
         dashboard_choice1 = st.button("View Dashboard", key="db1", use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
         
         st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
         st.subheader("Per Capita GNI Map")
-        st.image("streamlit/images/Per Capita GNI, Monitoring on the World Map.png", output_format="PNG", width=None)
+        st.image("images/Per Capita GNI, Monitoring on the World Map.png", output_format="PNG", width=None)
         dashboard_choice3 = st.button("View Dashboard", key="db3", use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
         
         st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
         st.subheader("Sectoral Spending Distribution")
-        st.image("streamlit/images/Sectoral Expenditure Analysis.png", output_format="PNG", width=None)
+        st.image("images/Sectoral Expenditure Analysis.png", output_format="PNG", width=None)
         dashboard_choice5 = st.button("View Dashboard", key="db5", use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)   
        
@@ -357,13 +381,13 @@ with tab1:
         
         st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
         st.subheader("USD Exchange Rate")
-        st.image("streamlit/images/USD exchange rate according to IMF.png", output_format="PNG", width=None)
+        st.image("images/USD exchange rate according to IMF.png", output_format="PNG", width=None)
         dashboard_choice2 = st.button("View Dashboard", key="db2", use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
         
         st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
         st.subheader("Sectors by Decades")
-        st.image("streamlit/images/the values of sectors by decades.png", output_format="PNG", width=None)
+        st.image("images/the values of sectors by decades.png", output_format="PNG", width=None)
         dashboard_choice4 = st.button("View Dashboard", key="db4", use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
     
@@ -396,315 +420,425 @@ with tab1:
     if not dashboard_displayed:
         st.info("👆 Select a dashboard above or explore the other tabs to use our forecasting tools.")
 
-# # Tab 2: Economic Forecasting
-# with tab2:
-#     st.markdown('<div class="dashboard-main-title">Economic Growth Forecasting</div>', unsafe_allow_html=True)
+# Tab 2: FIX - Economic Forecasting
+with tab2:
+    st.markdown('<div class="dashboard-main-title">Economic Forecasting</div>', unsafe_allow_html=True)
     
-#     if model_loaded:
-#         st.write("Use this tool to forecast economic growth based on various indicators.")
+    if not model_loaded:
+        st.error("Model could not be loaded. Prediction unavailable.")
+    else:
+        st.write("""
+        **Advanced GDP Prediction Model** - Uses the Random Forest model trained in the notebook.
+        """)
         
-#         # Create columns for input parameters
-#         col1, col2 = st.columns(2)
+        st.info(f"Model uses {len(model_info['features'])} economic indicators and has {model_info['r2_score']*100:.2f}% accuracy.")
         
-#         with col1:
-#             gdp_growth = st.slider("GDP Growth Rate (%)", min_value=-5.0, max_value=10.0, value=2.5, step=0.1)
-#             inflation_rate = st.slider("Inflation Rate (%)", min_value=0.0, max_value=20.0, value=3.0, step=0.1)
-#             unemployment_rate = st.slider("Unemployment Rate (%)", min_value=1.0, max_value=20.0, value=5.0, step=0.1)
+        # User input section - ALL 13 features
+        st.subheader("Enter Economic Indicators")
         
-#         with col2:
-#             trade_balance = st.slider("Trade Balance (% of GDP)", min_value=-15.0, max_value=15.0, value=0.0, step=0.1)
-#             region_options = ["North America", "Europe", "Asia", "Latin America", "Africa", "Oceania"]
-#             selected_region = st.selectbox("Region", region_options)
+        # User-friendly names for features
+        feature_display = {
+            'AMA_exchange_rate': {'name': 'AMA Exchange Rate', 'default': 1.0, 'help': 'Local currency / USD'},
+            'IMF_based_exchange_rate': {'name': 'IMF Exchange Rate', 'default': 1.0, 'help': 'IMF official exchange rate'},
+            'Population': {'name': 'Population', 'default': 50000000, 'help': 'Total population count'},
+            'Per_capita_GNI': {'name': 'Per Capita GNI (USD)', 'default': 10000, 'help': 'Gross National Income per person'},
+            'Agriculture_hunting_forestry_fishing_ISIC_A_B': {'name': 'Agriculture Value (Million USD)', 'default': 500.0, 'help': 'Agriculture sector value added'},
+            'Changes_in_inventories': {'name': 'Changes in Inventories (Million USD)', 'default': 0.0, 'help': 'Inventory changes'},
+            'Construction_ISIC_F': {'name': 'Construction Value (Million USD)', 'default': 25.0, 'help': 'Construction sector value'},
+            'General_government_final_consumption_expenditure': {'name': 'Government Expenditure (Million USD)', 'default': 1000.0, 'help': 'Government final consumption expenditure'},
+            'Manufacturing_ISIC_D': {'name': 'Manufacturing Value (Million USD)', 'default': 800.0, 'help': 'Manufacturing sector value'},
+            'Mining_Manufacturing_Utilities_ISIC_C_E': {'name': 'Mining & Utilities (Million USD)', 'default': 600.0, 'help': 'Mining and utilities value'},
+            'Other_Activities_ISIC_J_P': {'name': 'Other Activities (Million USD)', 'default': 400.0, 'help': 'Other economic activities'},
+            'Transport_storage_and_communication_ISIC_I': {'name': 'Transport & Communication (Million USD)', 'default': 300.0, 'help': 'Transport sector value'},
+            'Wholesale_retail_trade_restaurants_and_hotels_ISIC_G_H': {'name': 'Trade & Hotels (Million USD)', 'default': 700.0, 'help': 'Wholesale/retail trade and hospitality'}
+        }
+        
+        # Two-column layout
+        col1, col2 = st.columns(2)
+        
+        inputs = {}
+        for i, feature in enumerate(model_info['features']):
+            display_info = feature_display[feature]
             
-#             # Convert region to dummy variables (simplified for example)
-#             region_asia = 1 if selected_region == "Asia" else 0
-#             region_europe = 1 if selected_region == "Europe" else 0
-#             region_north_america = 1 if selected_region == "North America" else 0
-#             # Add more regions as needed
+            # Alternate columns
+            column = col1 if i % 2 == 0 else col2
+            
+            with column:
+                inputs[feature] = st.number_input(
+                    display_info['name'],
+                    value=float(display_info['default']),
+                    format="%.2f",
+                    help=display_info['help'],
+                    key=f"input_{feature}"
+                )
         
-#         # Prepare data for prediction
-#         input_data = {
-#             'GDP_Growth': gdp_growth,
-#             'Inflation_Rate': inflation_rate,
-#             'Unemployment_Rate': unemployment_rate,
-#             'Trade_Balance': trade_balance,
-#             'Region_Asia': region_asia,
-#             'Region_Europe': region_europe,
-#             'Region_North_America': region_north_america
-#             # Add more features as needed
-#         }
-        
-#         # Create input dataframe for prediction
-#         input_df = pd.DataFrame([input_data])
-        
-#         # Prediction button
-#         if st.button("Generate Economic Forecast", use_container_width=True):
-#             # Show a spinner while calculating
-#             with st.spinner("Calculating forecast..."):
-#                 time.sleep(1)  # Simulate computation time
+        # Prediction button
+        if st.button("🔮 Make GDP Prediction", type="primary"):
+            try:
+                # Prepare input array - EXACT feature order
+                input_array = np.array([[inputs[feature] for feature in model_info['features']]])
                 
-#                 try:
-#                     # Make prediction
-#                     prediction = model.predict(input_df)[0]
-                    
-#                     # Display prediction with nice formatting
-#                     st.success("Forecast Generated Successfully!")
-                    
-#                     # Create columns for displaying results
-#                     col1, col2, col3 = st.columns(3)
-                    
-#                     with col1:
-#                         st.metric(
-#                             label="Forecasted Growth",
-#                             value=f"{prediction:.2f}%",
-#                             delta=f"{prediction - 2.5:.2f}%" # Comparing to global average
-#                         )
-                    
-#                     with col2:
-#                         # Create a gauge chart for the prediction
-#                         fig = go.Figure(go.Indicator(
-#                             mode="gauge+number",
-#                             value=prediction,
-#                             title={'text': "Economic Growth Potential"},
-#                             gauge={
-#                                 'axis': {'range': [-5, 10]},
-#                                 'bar': {'color': "darkblue"},
-#                                 'steps': [
-#                                     {'range': [-5, 0], 'color': "red"},
-#                                     {'range': [0, 3], 'color': "yellow"},
-#                                     {'range': [3, 10], 'color': "green"}
-#                                 ],
-#                                 'threshold': {
-#                                     'line': {'color': "black", 'width': 4},
-#                                     'thickness': 0.75,
-#                                     'value': prediction
-#                                 }
-#                             }
-#                         ))
-                        
-#                         fig.update_layout(height=300)
-#                         st.plotly_chart(fig, use_container_width=True)
-                    
-#                     with col3:
-#                         # Classification based on growth rate
-#                         if prediction < 0:
-#                             status = "Recession"
-#                             color = "🔴"
-#                         elif prediction < 2:
-#                             status = "Slow Growth"
-#                             color = "🟠"
-#                         elif prediction < 4:
-#                             status = "Moderate Growth"
-#                             color = "🟡"
-#                         else:
-#                             status = "Strong Growth"
-#                             color = "🟢"
-                        
-#                         st.markdown(f"### Growth Status: {color} {status}")
-#                         st.markdown("#### Key Factors:")
-                        
-#                         # List the factors that influenced the prediction
-#                         factors = []
-#                         if gdp_growth > 3:
-#                             factors.append("Strong recent GDP growth")
-#                         if inflation_rate < 2.5:
-#                             factors.append("Low inflation")
-#                         if unemployment_rate < 4:
-#                             factors.append("Low unemployment")
-#                         if trade_balance > 2:
-#                             factors.append("Positive trade balance")
-                        
-#                         if not factors:
-#                             factors = ["Balanced economic indicators"]
-                        
-#                         for factor in factors:
-#                             st.markdown(f"- {factor}")
+                st.write("**Debug Information:**")
+                st.write(f"Input shape: {input_array.shape}")
+                st.write(f"Expected features: {len(model_info['features'])}")
                 
-#                 except Exception as e:
-#                     st.error(f"Error generating forecast: {e}")
-#     else:
-#         st.warning("Economic forecast model is not available. Please check the model file.")
-#         st.info("You can still explore the dashboards in the first tab.")
+                # Make prediction
+                prediction = model_info['model'].predict(input_array)[0]
+                
+                # Show result
+                st.success(f"## 💰 Predicted GDP: ${prediction:,.2f} USD")
+                
+                # Show input values
+                with st.expander("Review Input Values"):
+                    for feature, value in inputs.items():
+                        friendly_name = feature_display[feature]['name']
+                        st.write(f"• {friendly_name}: {value:,.2f}")
+                
+                # Reference GDP values
+                with st.expander("Reference GDP Values (2022)"):
+                    gdp_examples = {
+                        "United States": "25.46 trillion USD",
+                        "China": "17.96 trillion USD", 
+                        "Japan": "4.41 trillion USD",
+                        "Germany": "4.07 trillion USD",
+                        "India": "3.39 trillion USD",
+                        "Turkey": "819.0 billion USD"
+                    }
+                    
+                    for country, gdp in gdp_examples.items():
+                        st.write(f"- {country}: {gdp}")
+                
+            except Exception as e:
+                st.error(f"❌ Prediction error: {e}")
+                st.write("**Possible causes:**")
+                st.write("- Input data format error")
+                st.write("- Model file corrupted")
+                
+        # Sample test button
+        if st.button("🧪 Test with Sample Data"):
+            try:
+                # Test with known values
+                sample_values = [1.0, 1.0, 50000000, 10000, 500, 0, 25, 1000, 800, 600, 400, 300, 700]
+                sample_array = np.array([sample_values])
+                sample_prediction = model_info['model'].predict(sample_array)[0]
+                
+                st.success(f"Sample prediction: ${sample_prediction:,.2f}")
+                st.info("✅ Model is working correctly!")
+            except Exception as e:
+                st.error(f"❌ Test failed: {e}")
 
-# # Tab 3: Country Comparison
-# with tab3:
-#     st.markdown('<div class="dashboard-main-title">Country Economic Comparison</div>', unsafe_allow_html=True)
+with tab3:
+    st.markdown('<div class="dashboard-main-title">Country Economic Comparison</div>', unsafe_allow_html=True)
     
-#     # Assuming we have a list of countries
-#     countries = ["United States", "China", "Germany", "Japan", "United Kingdom", "France", "India", 
-#                 "Brazil", "Canada", "South Korea", "Australia", "Mexico", "Indonesia", "Turkey"]
+    # Get countries from CSV
+    countries = sorted(economy_data['Country'].unique().tolist())
     
-#     # Country selection
-#     col1, col2 = st.columns(2)
+    # Country selection
+    col1, col2 = st.columns(2)
     
-#     with col1:
-#         country1 = st.selectbox("Select Country 1", countries, index=0)
+    with col1:
+        country1 = st.selectbox("Select Country 1", countries, index=0)
     
-#     with col2:
-#         # Default to second country in list
-#         default_country2_index = 1 if len(countries) > 1 else 0
-#         country2 = st.selectbox("Select Country 2", countries, index=default_country2_index)
+    with col2:
+        # Default to second country in list
+        default_country2_index = 1 if len(countries) > 1 else 0
+        country2 = st.selectbox("Select Country 2", countries, index=default_country2_index)
     
-#     # Metrics to compare
-#     metrics = ["GDP Growth Rate", "Inflation Rate", "Unemployment Rate", "Trade Balance", 
-#               "Public Debt", "Foreign Investment", "Currency Strength"]
+   # Economic metrics from CSV (use correct column names)
+    metrics = [
+        "Per_capita_GNI",
+        "Gross_Domestic_Product_GDP",
+        "Gross_National_IncomeGNI_in_USD",
+        "Gross_capital_formation",
+        "Exports_of_goods_and_services",
+        "Imports_of_goods_and_services"
+    ]
+
+    # Metric labels and units
+    metric_info = {
+        # Underscore versions (original column names)
+        "Per_capita_GNI": {"label": "Per Capita GNI", "unit": "USD"},
+        "Gross_Domestic_Product_GDP": {"label": "GDP", "unit": "Million USD"},
+        "Gross_National_IncomeGNI_in_USD": {"label": "GNI", "unit": "Million USD"},
+        "Gross_capital_formation": {"label": "Capital Formation", "unit": "Million USD"},
+        "Exports_of_goods_and_services": {"label": "Exports", "unit": "Million USD"},
+        "Imports_of_goods_and_services": {"label": "Imports", "unit": "Million USD"},
+        
+        # Space versions (displayed labels)
+        "Per Capita GNI": {"label": "Per Capita GNI", "unit": "USD"},
+        "GDP": {"label": "GDP", "unit": "Million USD"},
+        "GNI": {"label": "GNI", "unit": "Million USD"},
+        "Capital Formation": {"label": "Capital Formation", "unit": "Million USD"},
+        "Exports": {"label": "Exports", "unit": "Million USD"},
+        "Imports": {"label": "Imports", "unit": "Million USD"}
+    }
     
-#     selected_metrics = st.multiselect(
-#         "Select Metrics to Compare",
-#         metrics,
-#         default=metrics[:4]  # Default to first 4 metrics
-#     )
+    # Metric selection
+    selected_metrics = st.multiselect(
+        "Select Economic Indicators to Compare",
+        metrics,
+        default=metrics[:4],
+        format_func=lambda x: metric_info[x]["label"]
+    )
     
-#     if st.button("Compare Countries", use_container_width=True):
-#         if not selected_metrics:
-#             st.warning("Please select at least one metric to compare.")
-#         else:
-#             # In a real application, you would fetch actual data here
-#             # For this example, we'll use random data
+    # Year selection
+    available_years = sorted(economy_data['Year'].unique(), reverse=True)
+    selected_year = st.selectbox("Select Year for Comparison", available_years, index=0)
+    
+
+    if st.button("Compare Countries", use_container_width=True):
+        if not selected_metrics:
+            st.warning("Please select at least one economic indicator to compare.")
+        else:
+            # Fetch real data from CSV
+            comparison_data = {}
             
-#             # Create random comparison data for demonstration
-#             np.random.seed(42)  # For reproducible results
-#             comparison_data = {}
-            
-#             for metric in selected_metrics:
-#                 if metric == "GDP Growth Rate":
-#                     comparison_data[metric] = {
-#                         country1: round(np.random.uniform(1.5, 4.5), 1),
-#                         country2: round(np.random.uniform(1.5, 4.5), 1)
-#                     }
-#                 elif metric == "Inflation Rate":
-#                     comparison_data[metric] = {
-#                         country1: round(np.random.uniform(1.0, 6.0), 1),
-#                         country2: round(np.random.uniform(1.0, 6.0), 1)
-#                     }
-#                 elif metric == "Unemployment Rate":
-#                     comparison_data[metric] = {
-#                         country1: round(np.random.uniform(3.0, 8.0), 1),
-#                         country2: round(np.random.uniform(3.0, 8.0), 1)
-#                     }
-#                 elif metric == "Trade Balance":
-#                     comparison_data[metric] = {
-#                         country1: round(np.random.uniform(-5.0, 5.0), 1),
-#                         country2: round(np.random.uniform(-5.0, 5.0), 1)
-#                     }
-#                 elif metric == "Public Debt":
-#                     comparison_data[metric] = {
-#                         country1: round(np.random.uniform(40.0, 120.0), 1),
-#                         country2: round(np.random.uniform(40.0, 120.0), 1)
-#                     }
-#                 elif metric == "Foreign Investment":
-#                     comparison_data[metric] = {
-#                         country1: round(np.random.uniform(10.0, 50.0), 1),
-#                         country2: round(np.random.uniform(10.0, 50.0), 1)
-#                     }
-#                 else:  # Currency Strength
-#                     comparison_data[metric] = {
-#                         country1: round(np.random.uniform(0.7, 1.3), 2),
-#                         country2: round(np.random.uniform(0.7, 1.3), 2)
-#                     }
-            
-#             # Display comparison
-#             st.subheader(f"Economic Comparison: {country1} vs {country2}")
-            
-#             # Create a radar chart for comparison
-#             if len(selected_metrics) >= 3:  # Need at least 3 metrics for a meaningful radar chart
-#                 categories = selected_metrics
+            for metric in selected_metrics:
+                # Find value for Country1
+                country1_data = economy_data[(economy_data['Country'] == country1) & 
+                                        (economy_data['Year'] == selected_year)]
                 
-#                 fig = go.Figure()
+                # Find value for Country2
+                country2_data = economy_data[(economy_data['Country'] == country2) & 
+                                        (economy_data['Year'] == selected_year)]
                 
-#                 # Add traces for each country
-#                 fig.add_trace(go.Scatterpolar(
-#                     r=[comparison_data[metric][country1] for metric in categories],
-#                     theta=categories,
-#                     fill='toself',
-#                     name=country1
-#                 ))
+                if not country1_data.empty and metric in country1_data.columns and not country2_data.empty and metric in country2_data.columns:
+                    val1 = country1_data[metric].values[0]
+                    val2 = country2_data[metric].values[0]
+                    
+                    # Replace NaN values with 0
+                    val1 = 0 if pd.isna(val1) else val1
+                    val2 = 0 if pd.isna(val2) else val2
+                    
+                    comparison_data[metric] = {
+                        country1: val1,
+                        country2: val2
+                    }
+                else:
+                    # If data is missing, assign default value
+                    comparison_data[metric] = {
+                        country1: 0,
+                        country2: 0
+                    }
+            
+            # Display comparison
+            st.subheader(f"Economic Comparison ({selected_year}): {country1} vs {country2}")
+            
+            # Radar chart for comparison
+            if comparison_data and len(selected_metrics) >= 3:
+                # Prepare data for radar chart
+                categories = []
+                values1 = []
+                values2 = []
                 
-#                 fig.add_trace(go.Scatterpolar(
-#                     r=[comparison_data[metric][country2] for metric in categories],
-#                     theta=categories,
-#                     fill='toself',
-#                     name=country2
-#                 ))
+                for metric in selected_metrics:
+                    if metric in comparison_data:
+                        # Use user-friendly labels
+                        friendly_name = metric_info[metric]["label"] if metric in metric_info else metric
+                        categories.append(friendly_name)
+                        
+                        # Get values and normalize
+                        val1 = comparison_data[metric][country1]
+                        val2 = comparison_data[metric][country2]
+                        
+                        # Skip if both values are 0
+                        if val1 == 0 and val2 == 0:
+                            continue
+                        
+                        # Normalize large values
+                        max_val = max(val1, val2) if max(val1, val2) > 0 else 1
+                        norm_val1 = (val1 / max_val) * 100
+                        norm_val2 = (val2 / max_val) * 100
+                        
+                        values1.append(norm_val1)
+                        values2.append(norm_val2)
                 
-#                 # Update layout
-#                 fig.update_layout(
-#                     polar=dict(
-#                         radialaxis=dict(
-#                             visible=True,
-#                         )
-#                     ),
-#                     showlegend=True,
-#                     height=500
-#                 )
+                # Radar chart
+                fig = go.Figure()
                 
-#                 st.plotly_chart(fig, use_container_width=True)
-            
-#             # Create a table comparison
-#             comparison_table = []
-#             for metric in selected_metrics:
-#                 value1 = comparison_data[metric][country1]
-#                 value2 = comparison_data[metric][country2]
+                # Add trace for first country
+                fig.add_trace(go.Scatterpolar(
+                    r=values1,
+                    theta=categories,
+                    fill='toself',
+                    name=country1,
+                    line_color='royalblue'
+                ))
                 
-#                 if metric in ["GDP Growth Rate", "Inflation Rate", "Unemployment Rate", "Trade Balance"]:
-#                     unit = "%"
-#                 elif metric == "Public Debt":
-#                     unit = "% of GDP"
-#                 elif metric == "Foreign Investment":
-#                     unit = "Billion USD"
-#                 else:  # Currency Strength
-#                     unit = "Index"
+                # Add trace for second country
+                fig.add_trace(go.Scatterpolar(
+                    r=values2,
+                    theta=categories,
+                    fill='toself',
+                    name=country2,
+                    line_color='crimson'
+                ))
                 
-#                 comparison_table.append({
-#                     "Metric": metric,
-#                     f"{country1}": f"{value1} {unit}",
-#                     f"{country2}": f"{value2} {unit}",
-#                     "Difference": f"{abs(value1 - value2):.1f} {unit}"
-#                 })
-            
-#             comparison_df = pd.DataFrame(comparison_table)
-#             st.table(comparison_df)
-            
-#             # Summary of comparison
-#             st.subheader("Comparison Summary")
-            
-#             # Count advantages for each country
-#             advantages1 = 0
-#             advantages2 = 0
-            
-#             summary_points = []
-            
-#             for metric in selected_metrics:
-#                 value1 = comparison_data[metric][country1]
-#                 value2 = comparison_data[metric][country2]
+                # Configure chart appearance
+                fig.update_layout(
+                    polar=dict(
+                        radialaxis=dict(
+                            visible=True,
+                            range=[0, 100]
+                        )
+                    ),
+                    title=f"Economic Indicators Comparison ({selected_year})",
+                    showlegend=True,
+                    height=600
+                )
                 
-#                 # For most metrics, higher is better, except inflation, unemployment, and public debt
-#                 if metric in ["Inflation Rate", "Unemployment Rate", "Public Debt"]:
-#                     if value1 < value2:
-#                         advantages1 += 1
-#                         summary_points.append(f"✅ {country1} has lower {metric.lower()} ({value1} vs {value2})")
-#                     elif value2 < value1:
-#                         advantages2 += 1
-#                         summary_points.append(f"✅ {country2} has lower {metric.lower()} ({value2} vs {value1})")
-#                 else:
-#                     if value1 > value2:
-#                         advantages1 += 1
-#                         summary_points.append(f"✅ {country1} has higher {metric.lower()} ({value1} vs {value2})")
-#                     elif value2 > value1:
-#                         advantages2 += 1
-#                         summary_points.append(f"✅ {country2} has higher {metric.lower()} ({value2} vs {value1})")
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Add detailed explanation below the chart
+                st.info("""
+                **How to Interpret This Radar Chart:**
+
+                This radar chart shows relative values (normalized to 100%) to enable easier comparison between economies of different sizes. For each indicator:
+
+                - The country with the higher value receives 100% on that axis
+                - The other country's value is shown as a percentage relative to the higher value
+                - A larger overall area indicates better economic performance on the selected metrics
+
+                **Note:** This normalization method allows comparison of economies of vastly different sizes, but means that the leading country will always show 100% on each metric where it leads. The actual values can be seen in the table below.
+                """)            
+            # Bar chart for comparison (if fewer than 3 metrics or radar chart not shown)
+            elif comparison_data:
+                chart_data = []
+                
+                for metric in selected_metrics:
+                    if metric in comparison_data:
+                        chart_data.append({
+                            "Metric": metric_info[metric]["label"],
+                            country1: comparison_data[metric][country1],
+                            country2: comparison_data[metric][country2]
+                        })
+                
+                chart_df = pd.DataFrame(chart_data)
+                
+                # Plotly bar chart - normalize values for better comparison
+                fig = go.Figure()
+                
+                for metric in chart_df["Metric"]:
+                    row = chart_df[chart_df["Metric"] == metric]
+                    val1 = row[country1].values[0]
+                    val2 = row[country2].values[0]
+                    
+                    # Skip if both values are 0
+                    if val1 == 0 and val2 == 0:
+                        continue
+                    
+                    # Normalize values for comparison
+                    max_val = max(val1, val2) if max(val1, val2) > 0 else 1
+                    norm_val1 = (val1 / max_val) * 100
+                    norm_val2 = (val2 / max_val) * 100
+                    
+                    fig.add_trace(go.Bar(
+                        x=[metric],
+                        y=[norm_val1],
+                        name=f"{country1}",
+                        marker_color='royalblue',
+                        text=f"{val1:,.0f} {metric_info[metric]['unit']}",
+                        textposition='auto',
+                        offsetgroup=0
+                    ))
+                    
+                    fig.add_trace(go.Bar(
+                        x=[metric],
+                        y=[norm_val2],
+                        name=f"{country2}",
+                        marker_color='crimson',
+                        text=f"{val2:,.0f} {metric_info[metric]['unit']}",
+                        textposition='auto',
+                        offsetgroup=1
+                    ))
+                
+                fig.update_layout(
+                    title=f"Economic Indicators Comparison ({selected_year})",
+                    barmode='group',
+                    height=500,
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                    yaxis=dict(title="Relative Value (%)")
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
             
-#             # Display summary points
-#             for point in summary_points:
-#                 st.markdown(point)
+            # Create a table comparison
+            comparison_table = []
+            for metric in selected_metrics:
+                if metric in comparison_data:
+                    value1 = comparison_data[metric][country1]
+                    value2 = comparison_data[metric][country2]
+                    unit = metric_info[metric]["unit"]
+                    
+                    # Calculate difference and percentage difference
+                    diff = value1 - value2
+                    if value2 != 0:
+                        pct_diff = (diff / abs(value2)) * 100
+                    else:
+                        pct_diff = 0 if value1 == 0 else 100
+                    
+                    comparison_table.append({
+                        "Indicator": metric_info[metric]["label"],
+                        f"{country1}": f"{value1:,.0f} {unit}",
+                        f"{country2}": f"{value2:,.0f} {unit}",
+                        "Difference": f"{diff:,.0f} {unit} ({pct_diff:.1f}%)"
+                    })
             
-#             # Overall comparison result
-#             if advantages1 > advantages2:
-#                 st.success(f"Based on selected metrics, {country1} shows stronger economic performance.")
-#             elif advantages2 > advantages1:
-#                 st.success(f"Based on selected metrics, {country2} shows stronger economic performance.")
-#             else:
-#                 st.info(f"Based on selected metrics, {country1} and {country2} show comparable economic performance.")
+            comparison_df = pd.DataFrame(comparison_table)
+            st.table(comparison_df)
+            
+            # Summary of comparison
+            st.subheader("Economic Overview")
+            
+            # Count advantages for each country
+            advantages1 = 0
+            advantages2 = 0
+            
+            summary_points = []
+            
+            for metric in selected_metrics:
+                if metric in comparison_data:
+                    value1 = comparison_data[metric][country1]
+                    value2 = comparison_data[metric][country2]
+                    label = metric_info[metric]["label"]
+                    unit = metric_info[metric]["unit"]
+                    
+                    # For all these metrics, higher is generally better
+                    if value1 > value2 and value1 > 0:
+                        advantages1 += 1
+                        pct_higher = ((value1 - value2) / value2) * 100 if value2 > 0 else 100
+                        summary_points.append(f"✅ {country1} has higher {label} ({value1:,.0f} vs {value2:,.0f} {unit}, {pct_higher:.1f}% higher)")
+                    elif value2 > value1 and value2 > 0:
+                        advantages2 += 1
+                        pct_higher = ((value2 - value1) / value1) * 100 if value1 > 0 else 100
+                        summary_points.append(f"✅ {country2} has higher {label} ({value2:,.0f} vs {value1:,.0f} {unit}, {pct_higher:.1f}% higher)")
+            
+        # Display summary points
+        for point in summary_points:
+            st.markdown(point)
+        
+        # Overall comparison result
+        if advantages1 > advantages2:
+            st.success(f"Based on selected indicators, {country1} shows stronger economic performance in {advantages1} out of {len(selected_metrics)} areas.")
+        elif advantages2 > advantages1:
+            st.success(f"Based on selected indicators, {country2} shows stronger economic performance in {advantages2} out of {len(selected_metrics)} areas.")
+        else:
+            st.info(f"Based on selected indicators, {country1} and {country2} show comparable economic performance.")
+            
+    with st.expander("🔍 Advanced: View Raw Data for Selected Countries"):
+        if selected_year and country1 and country2:
+            year_data = economy_data[economy_data['Year'] == selected_year]
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.write(f"Data for {country1} in {selected_year}")
+                st.dataframe(year_data[year_data['Country'] == country1])
+            
+            with col2:
+                st.write(f"Data for {country2} in {selected_year}")
+                st.dataframe(year_data[year_data['Country'] == country2])
+            
+            st.info("This shows all available data columns for the selected countries in the chosen year. Useful for detailed analysis beyond the selected metrics.")
 
 # Sidebar
 st.sidebar.title("About This Project")
